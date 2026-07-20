@@ -31,19 +31,22 @@ export function startCapture(): void {
   const args = ["-t", "waveaudio", "default", "-t", "raw", "-r", String(SAMPLE_RATE), "-e", "signed", "-b", "16", "-c", "1", "-"];
   soxProcess = spawn("sox", args);
 
-  let buf: Buffer[] = [];
+  let frameBuf: Buffer[] = [];
   soxProcess.stdout?.on("data", (chunk: Buffer) => {
     try {
-      buf.push(chunk);
-      const total = buf.reduce((s, b) => s + b.length, 0);
+      frameBuf.push(chunk);
+      const total = frameBuf.reduce((s, b) => s + b.length, 0);
       if (total < FRAME_BYTES) return;
 
-      const frame = Buffer.concat(buf);
-      buf = [];
+      const frame = Buffer.concat(frameBuf);
+      frameBuf = [];
       audioBuffer.push(frame);
 
       const vad = getVadContext();
-      if (!vad) return;
+      if (!vad) {
+        onError?.("vad ctx null");
+        return;
+      }
 
       const prob = vad.process(bufToF32(frame));
 
