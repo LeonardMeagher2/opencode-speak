@@ -1,11 +1,14 @@
 import { Plugin, tool } from "@opencode-ai/plugin";
-import { startCapture, stopCapture, setOnChunk, setMicError } from "./vad";
-import { initWhisper, waitForWhisper, transcribeBuffer, freeWhisper, setWhisperStatus } from "./stt";
 import { init, isInitialized, isActive, isWaiting, setSessionID, setAgent, setActive, setWaiting, sendText, reset, log, getSessionID } from "./state";
-import { speakText, stopVoice as stopTts, setSpeed, getVoiceSettings } from "./tts";
+import { createTinyTts } from "./tts/tiny-tts";
+import { createWhisper } from "./stt/whisper";
+import { startCapture, stopCapture, setOnChunk, setMicError, initVad } from "./vad";
+import type { TtsAdapter, SttAdapter } from "./types";
 
 const _spokenTexts = new Map<string, string>();
 const _assistantMsgs = new Set<string>();
+let tts: TtsAdapter;
+let stt: SttAdapter;
 
 const VoiceModePlugin: Plugin = async ({ client, directory }) => {
   if (isInitialized()) return {};
@@ -15,9 +18,9 @@ const VoiceModePlugin: Plugin = async ({ client, directory }) => {
 
   return {
     dispose: async () => {
-      stopTts();
+      tts?.dispose();
       stopCapture();
-      freeWhisper();
+      stt?.dispose();
       reset();
     },
 
@@ -54,9 +57,9 @@ const VoiceModePlugin: Plugin = async ({ client, directory }) => {
         execute: async (args: any) => {
           if (args.speed !== undefined) {
             if (args.speed <= 0) return "Invalid speed.";
-            setSpeed(args.speed);
+            tts.setSpeed(args.speed);
           }
-          return `Current speed: ${getVoiceSettings().speed}`;
+          return `Current speed: ${(tts.getSettings() as { speed: number }).speed}`;
         }
       })
     },
@@ -77,10 +80,11 @@ const VoiceModePlugin: Plugin = async ({ client, directory }) => {
 
 async function initBg(): Promise<void> {
   try {
-    setWhisperStatus((msg) => log(msg));
     setMicError((msg) => log(msg));
-    initWhisper();
-    await waitForWhisper();
+    stt = createWhisper();
+    tts = createTinyTts();
+    await stt.init();
+    initVad(stt.getVadContext());
   } catch (err) {
     log(`initBg error: ${err instanceof Error ? err.message : err}`);
   }
@@ -89,16 +93,16 @@ async function initBg(): Promise<void> {
 function flushSpokenTexts(): void {
   for (const [, text] of _spokenTexts) {
     const trimmed = text.trim();
-    if (trimmed) speakText(trimmed);
+    if (trimmed) tts.speak(trimmed);
   }
   _spokenTexts.clear();
 }
 
 function transcribeChunk(raw: Buffer): void {
-  transcribeBuffer(raw).then((text) => {
+  stt.transcribe(raw).then((text) => {
     if (!text || text.length < 2) return;
     log(`heard: "${text}"`);
-    stopTts();
+    tts.stop();
     _spokenTexts.clear();
     try {
       sendText(text);
@@ -119,7 +123,7 @@ function startVoice(): void {
 function stopVoice(): void {
   if (!isActive()) return;
   setActive(false);
-  stopTts();
+  tts.stop();
   stopCapture();
   setOnChunk(() => {});
   log("voice: off");

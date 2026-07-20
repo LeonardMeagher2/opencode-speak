@@ -1,5 +1,4 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { getVadContext } from "./stt";
 
 const SAMPLE_RATE = 16000;
 const BYTES_PER_SAMPLE = 2;
@@ -13,6 +12,9 @@ let audioBuffer: Buffer[] = [];
 let silenceStart = 0;
 let onChunk: ((buf: Buffer) => void) | null = null;
 let onError: ((msg: string) => void) | null = null;
+let _vadCtx: any = null;
+
+export function initVad(vadCtx: any): void { _vadCtx = vadCtx; }
 
 function bufToF32(buf: Buffer): Float32Array {
   const samples = buf.length / 2;
@@ -42,13 +44,12 @@ export function startCapture(): void {
       frameBuf = [];
       audioBuffer.push(frame);
 
-      const vad = getVadContext();
-      if (!vad) {
+      if (!_vadCtx) {
         onError?.("vad ctx null");
         return;
       }
 
-      const prob = vad.process(bufToF32(frame));
+      const prob = _vadCtx.process(bufToF32(frame));
 
       if (prob > VAD_SPEECH) {
         silenceStart = 0;
