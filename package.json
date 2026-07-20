@@ -8,6 +8,7 @@
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
+    "dev": "bun build src/index.ts --outfile \".opencode\\plugins\\opencode-speak.js\" --target bun --external whisper-cpp-node",
     "prepublishOnly": "tsc"
   },
   "dependencies": {
