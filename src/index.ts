@@ -1,4 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin";
+import { writeFileSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { startCapture, stopCapture } from "./vad";
 import { initWhisper, transcribe, freeWhisper } from "./stt";
 import { closeTTS, speak } from "./tts";
@@ -14,10 +16,18 @@ let isPlaying = false;
 let initialized = false;
 let active = false;
 let promptAsync: Function | null = null;
+let commandFile = "";
 
-export const VoiceModePlugin: Plugin = async ({ client }) => {
+export const VoiceModePlugin: Plugin = async ({ client, directory }) => {
   if (initialized) return {};
   initialized = true;
+
+  commandFile = join(directory, ".opencode", "commands", "voice.md");
+
+  try {
+    mkdirSync(join(directory, ".opencode", "commands"), { recursive: true });
+    writeFileSync(commandFile, `---\ndescription: Toggle voice mode on/off\n---\n`);
+  } catch {}
 
   try {
     promptAsync = client.session.promptAsync.bind(client.session);
@@ -40,14 +50,11 @@ export const VoiceModePlugin: Plugin = async ({ client }) => {
       closeTTS();
       initialized = false;
       active = false;
+      try { unlinkSync(commandFile); } catch {}
     },
 
     event: async ({ event }) => {
       switch (event.type) {
-        case "tui.command.execute": {
-          if (event.properties.command === "voice") toggleVoice();
-          break;
-        }
         case "message.part.updated": {
           const { part, delta } = event.properties;
           if (part.sessionID !== sessionID) return;
@@ -59,6 +66,13 @@ export const VoiceModePlugin: Plugin = async ({ client }) => {
           flushPending();
           break;
         }
+      }
+    },
+
+    "command.execute.before": async (input, output) => {
+      if (input.command === "voice") {
+        toggleVoice();
+        output.parts = [];
       }
     },
   };
