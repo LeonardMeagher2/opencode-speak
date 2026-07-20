@@ -1,0 +1,26 @@
+{
+  "name": "opencode-speak",
+  "version": "0.1.0",
+  "description": "Voice mode plugin for opencode -- speak to your AI assistant on Windows",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "tsc"
+  },
+  "dependencies": {
+    "whisper-cpp-node": "^0.2.12"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest",
+    "@types/node": "^26.1.1",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT",
+  "keywords": ["opencode", "plugin", "voice", "speech", "windows"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,4 @@
+dist/
+node_modules/
+voice-models/
+*.mp3
