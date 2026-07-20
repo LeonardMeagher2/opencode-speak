@@ -12,6 +12,14 @@ let pendingDelta = "";
 let sentenceQueue: string[] = [];
 let isPlaying = false;
 let initialized = false;
+let muted = false;
+
+const TOGGLE_OFF = ["stop listening", "mute", "shut up", "go away", "silence"];
+const TOGGLE_ON = ["resume listening", "unmute", "start listening", "wake up", "listen again"];
+
+async function playTts(text: string): Promise<Uint8Array> {
+  try { return await speak(text); } catch { return new Uint8Array(0); }
+}
 
 export const VoiceModePlugin: Plugin = async ({ client }) => {
   if (initialized) return {};
@@ -38,6 +46,25 @@ export const VoiceModePlugin: Plugin = async ({ client }) => {
       try {
         const text = await transcribe(pcm);
         if (!text || text.length < 2) { phase = "listening"; return; }
+
+        const lower = text.trim().toLowerCase();
+        if (TOGGLE_OFF.some((p) => lower.startsWith(p) || lower.includes(p))) {
+          muted = true;
+          console.log("[opencode-speak] Muted");
+          const resp = await playTts("Microphone muted");
+          if (resp.length > 0) await playMp3(resp);
+          phase = "listening";
+          return;
+        }
+        if (TOGGLE_ON.some((p) => lower.startsWith(p) || lower.includes(p))) {
+          muted = false;
+          console.log("[opencode-speak] Unmuted");
+          const resp = await playTts("Microphone on");
+          if (resp.length > 0) await playMp3(resp);
+          phase = "listening";
+          return;
+        }
+        if (muted) { phase = "listening"; return; }
 
         const result = await client.session.promptAsync({
           path: { id: sessionID! },
