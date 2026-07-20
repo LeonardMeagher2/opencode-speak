@@ -5,5 +5,10 @@
       "path": "../tasks",
       "description": "Reference for how to set up a repo to build a plugin"
     }
+  },
+  "commands": {
+    "voice": {
+      "description": "Toggle voice mode on/off"
+    }
   }
 }

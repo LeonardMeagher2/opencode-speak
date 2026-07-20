@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin";
-import { startCapture, stopCapture, isMicAvailable } from "./vad";
+import { startCapture, stopCapture } from "./vad";
 import { initWhisper, transcribe, freeWhisper } from "./stt";
 import { closeTTS, speak } from "./tts";
 import { playMp3 } from "./player";
@@ -12,79 +12,23 @@ let pendingDelta = "";
 let sentenceQueue: string[] = [];
 let isPlaying = false;
 let initialized = false;
-let muted = false;
-
-const TOGGLE_OFF = ["stop listening", "mute", "shut up", "go away", "silence"];
-const TOGGLE_ON = ["resume listening", "unmute", "start listening", "wake up", "listen again"];
-
-async function playTts(text: string): Promise<Uint8Array> {
-  try { return await speak(text); } catch { return new Uint8Array(0); }
-}
+let active = false;
+let promptAsync: Function | null = null;
 
 export const VoiceModePlugin: Plugin = async ({ client }) => {
   if (initialized) return {};
   initialized = true;
 
   try {
-    const micOk = await isMicAvailable();
-    if (!micOk) {
-      console.warn("[opencode-speak] sox not found. Install: winget install --id ChrisBagwell.SoX -e");
-      return {};
-    }
+    promptAsync = client.session.promptAsync.bind(client.session);
 
     await initWhisper();
 
     const sess = await client.session.create({});
     if (sess.error) { console.error("[opencode-speak] Session create failed:", sess.error); return {}; }
     sessionID = sess.data.id;
-    console.log(`[opencode-speak] Session ${sessionID} ready. Listening...`);
 
-    startCapture(async (pcm) => {
-      if (phase !== "listening") return;
-      phase = "transcribing";
-
-      try {
-        const text = await transcribe(pcm);
-        if (!text || text.length < 2) { phase = "listening"; return; }
-
-        const lower = text.trim().toLowerCase();
-        if (TOGGLE_OFF.some((p) => lower.startsWith(p) || lower.includes(p))) {
-          muted = true;
-          console.log("[opencode-speak] Muted");
-          const resp = await playTts("Microphone muted");
-          if (resp.length > 0) await playMp3(resp);
-          phase = "listening";
-          return;
-        }
-        if (TOGGLE_ON.some((p) => lower.startsWith(p) || lower.includes(p))) {
-          muted = false;
-          console.log("[opencode-speak] Unmuted");
-          const resp = await playTts("Microphone on");
-          if (resp.length > 0) await playMp3(resp);
-          phase = "listening";
-          return;
-        }
-        if (muted) { phase = "listening"; return; }
-
-        const result = await client.session.promptAsync({
-          path: { id: sessionID! },
-          body: { parts: [{ type: "text", text }] },
-        });
-
-        if (result.error) {
-          console.error("[opencode-speak] promptAsync error:", result.error);
-          phase = "listening";
-          return;
-        }
-
-        phase = "waiting";
-      } catch (err) {
-        console.error("[opencode-speak] Transcribe error:", err);
-        phase = "listening";
-      }
-    });
-
-    phase = "listening";
+    startVoice();
   } catch (err) {
     console.error("[opencode-speak] Init error:", err);
   }
@@ -95,10 +39,15 @@ export const VoiceModePlugin: Plugin = async ({ client }) => {
       freeWhisper();
       closeTTS();
       initialized = false;
+      active = false;
     },
 
     event: async ({ event }) => {
       switch (event.type) {
+        case "tui.command.execute": {
+          if (event.properties.command === "voice") toggleVoice();
+          break;
+        }
         case "message.part.updated": {
           const { part, delta } = event.properties;
           if (part.sessionID !== sessionID) return;
@@ -114,6 +63,55 @@ export const VoiceModePlugin: Plugin = async ({ client }) => {
     },
   };
 };
+
+function startVoice(): void {
+  if (active) return;
+  active = true;
+
+  startCapture(async (pcm) => {
+    if (phase !== "listening") return;
+    phase = "transcribing";
+
+    try {
+      const text = await transcribe(pcm);
+      if (!text || text.length < 2) { phase = "listening"; return; }
+
+      const result = await promptAsync!({
+        path: { id: sessionID! },
+        body: { parts: [{ type: "text", text }] },
+      });
+
+      if (result.error) {
+        console.error("[opencode-speak] promptAsync error:", result.error);
+        phase = "listening";
+        return;
+      }
+
+      phase = "waiting";
+    } catch (err) {
+      console.error("[opencode-speak] Transcribe error:", err);
+      phase = "listening";
+    }
+  });
+
+  phase = "listening";
+  console.log("[opencode-speak] Listening...");
+}
+
+function stopVoice(): void {
+  if (!active) return;
+  active = false;
+  stopCapture();
+  sentenceQueue = [];
+  pendingDelta = "";
+  phase = "idle";
+  console.log("[opencode-speak] Stopped");
+}
+
+function toggleVoice(): void {
+  if (active) stopVoice();
+  else startVoice();
+}
 
 function onDelta(delta: string): void {
   pendingDelta += delta;
