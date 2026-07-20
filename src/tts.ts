@@ -10,6 +10,11 @@ const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 let ws: WebSocket | null = null;
 let connectionId = "";
+let onError: ((msg: string) => void) | null = null;
+
+export function setTtsError(cb: (msg: string) => void): void {
+  onError = cb;
+}
 
 function makeId(): string {
   return randomUUID().replace(/-/g, "");
@@ -44,8 +49,8 @@ function connect(): WebSocket {
     sendConfig();
   });
 
-  ws.addEventListener("error", (err: Event) => {
-    console.error("[opencode-speak] TTS WS error");
+  ws.addEventListener("error", () => {
+    onError?.("TTS WebSocket error");
   });
 
   ws.addEventListener("close", () => {

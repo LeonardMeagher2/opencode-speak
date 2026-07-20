@@ -1,9 +1,9 @@
 import type { Plugin } from "@opencode-ai/plugin";
-import { writeFileSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { startCapture, stopCapture } from "./vad";
-import { initWhisper, transcribe, freeWhisper } from "./stt";
-import { closeTTS, speak } from "./tts";
+import { startCapture, stopCapture, setVadError } from "./vad";
+import { initWhisper, transcribe, freeWhisper, setWhisperStatus } from "./stt";
+import { closeTTS, speak, setTtsError } from "./tts";
 import { playMp3 } from "./player";
 
 type Phase = "idle" | "listening" | "transcribing" | "waiting";
@@ -17,30 +17,49 @@ let initialized = false;
 let active = false;
 let promptAsync: Function | null = null;
 let commandFile = "";
+let clientRef: any = null;
+
+async function showToast(
+  message: string,
+  variant: "info" | "success" | "warning" | "error" = "info",
+  title?: string,
+  duration?: number,
+): Promise<void> {
+  if (!clientRef) return;
+  try {
+    await clientRef.tui.showToast({ body: { title, message, variant, duration } });
+  } catch {}
+}
 
 export const VoiceModePlugin: Plugin = async ({ client, directory }) => {
   if (initialized) return {};
   initialized = true;
+  clientRef = client;
+  promptAsync = client.session.promptAsync.bind(client.session);
 
   commandFile = join(directory, ".opencode", "commands", "voice.md");
-
   try {
     mkdirSync(join(directory, ".opencode", "commands"), { recursive: true });
     writeFileSync(commandFile, `---\ndescription: Toggle voice mode on/off\n---\n`);
   } catch {}
 
   try {
-    promptAsync = client.session.promptAsync.bind(client.session);
+    setWhisperStatus((msg) => showToast(msg, "info", "opencode-speak", 5000));
+    setVadError((msg) => showToast(msg, "error", "opencode-speak"));
+    setTtsError((msg) => showToast(msg, "error", "opencode-speak"));
 
     await initWhisper();
 
     const sess = await client.session.create({});
-    if (sess.error) { console.error("[opencode-speak] Session create failed:", sess.error); return {}; }
+    if (sess.error) {
+      await showToast("Voice mode: session create failed", "error", "opencode-speak");
+      return {};
+    }
     sessionID = sess.data.id;
 
     startVoice();
   } catch (err) {
-    console.error("[opencode-speak] Init error:", err);
+    await showToast(`Init failed: ${err instanceof Error ? err.message : err}`, "error", "opencode-speak");
   }
 
   return {
@@ -96,20 +115,20 @@ function startVoice(): void {
       });
 
       if (result.error) {
-        console.error("[opencode-speak] promptAsync error:", result.error);
+        await showToast("Failed to send prompt", "error", "opencode-speak");
         phase = "listening";
         return;
       }
 
       phase = "waiting";
     } catch (err) {
-      console.error("[opencode-speak] Transcribe error:", err);
+      await showToast(`Transcribe error: ${err instanceof Error ? err.message : err}`, "error", "opencode-speak");
       phase = "listening";
     }
   });
 
   phase = "listening";
-  console.log("[opencode-speak] Listening...");
+  showToast("Voice mode: listening", "info", "opencode-speak", 2000);
 }
 
 function stopVoice(): void {
@@ -119,7 +138,7 @@ function stopVoice(): void {
   sentenceQueue = [];
   pendingDelta = "";
   phase = "idle";
-  console.log("[opencode-speak] Stopped");
+  showToast("Voice mode stopped", "info", "opencode-speak", 2000);
 }
 
 function toggleVoice(): void {
@@ -161,7 +180,7 @@ async function playNext(): Promise<void> {
     const mp3 = await speak(text);
     if (mp3.length > 0) await playMp3(mp3);
   } catch (err) {
-    console.error("[opencode-speak] TTS error:", err);
+    await showToast(`TTS error: ${err instanceof Error ? err.message : err}`, "error", "opencode-speak");
   }
 
   if (sentenceQueue.length > 0) {

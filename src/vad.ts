@@ -15,6 +15,11 @@ let silenceStart = 0;
 let speechStart = 0;
 let vadInterval: ReturnType<typeof setInterval> | null = null;
 let utteranceCallback: ((pcm: Int16Array) => void) | null = null;
+let onError: ((msg: string) => void) | null = null;
+
+export function setVadError(cb: (msg: string) => void): void {
+  onError = cb;
+}
 
 export function startCapture(onUtterance: (pcm: Int16Array) => void): void {
   utteranceCallback = onUtterance;
@@ -40,12 +45,12 @@ export function startCapture(onUtterance: (pcm: Int16Array) => void): void {
   soxProcess.stderr?.on("data", () => {});
 
   soxProcess.on("error", (err: Error) => {
-    console.error("[opencode-speak] sox error:", err.message);
+    onError?.(`Sox error: ${err.message}`);
   });
 
   soxProcess.on("exit", (code: number | null) => {
     if (code !== 0 && code !== null) {
-      console.error(`[opencode-speak] sox exited with code ${code}`);
+      onError?.(`Sox exited with code ${code}`);
     }
   });
 

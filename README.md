@@ -44,6 +44,17 @@ bun run dev
 OpenCode auto-loads `.opencode/plugins/` project-level plugins — just run
 `opencode serve` from this directory.
 
+After building, add to your `opencode.jsonc`:
+
+```jsonc
+{
+  "plugin": [
+    "file://./.opencode/plugins/opencode-speak.js",
+    "file://./.opencode/plugins/opencode-speak-tui.js"
+  ]
+}
+```
+
 ## Usage
 
 1. Start the opencode server: `opencode serve`
@@ -51,12 +62,22 @@ OpenCode auto-loads `.opencode/plugins/` project-level plugins — just run
 3. Talk to your mic — after 1.2 s of silence the utterance is sent
 4. Hear the response spoken back sentence-by-sentence
 
-## Commands
+## Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/voice` | Toggle voice mode on/off |
+
+The TUI plugin also registers a keybind: **`<leader>v`** (default `Space+v`).
+
+## Build Commands
 
 | Command | Description |
 |---------|-------------|
 | `bun run build` | TypeScript compile to `dist/` (npm publish) |
-| `bun run dev` | Bundle to `.opencode/plugins/opencode-speak.js` |
+| `bun run dev` | Bundle server plugin to `.opencode/plugins/opencode-speak.js` |
+| `bun run dev:tui` | Bundle TUI plugin to `.opencode/plugins/opencode-speak-tui.js` |
+| `bun run dev:all` | Bundle both |
 
 ## Platform Portability
 

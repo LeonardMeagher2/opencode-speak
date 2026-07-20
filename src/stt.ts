@@ -14,10 +14,18 @@ const MODEL_URL =
 const MODEL_PATH = join(MODEL_DIR, "ggml-tiny.en.bin");
 
 let ctx: WhisperContext | null = null;
+let onStatus: ((msg: string) => void) | null = null;
+
+export function setWhisperStatus(cb: (msg: string) => void): void {
+  onStatus = cb;
+}
 
 export async function initWhisper(): Promise<void> {
   if (ctx) return;
-  if (!existsSync(MODEL_PATH)) await downloadModel();
+  if (!existsSync(MODEL_PATH)) {
+    onStatus?.("Downloading whisper model (75 MB)...");
+    await downloadModel();
+  }
   ctx = createWhisperContext({ model: MODEL_PATH, use_gpu: false });
 }
 
@@ -53,7 +61,6 @@ export async function transcribe(pcm: Int16Array): Promise<string> {
 function downloadModel(): Promise<void> {
   return new Promise((resolve, reject) => {
     if (!existsSync(MODEL_DIR)) mkdirSync(MODEL_DIR, { recursive: true });
-    console.log("[opencode-speak] Downloading whisper model (75 MB)...");
 
     const file = createWriteStream(MODEL_PATH);
     const request = get(MODEL_URL, (response) => {
@@ -70,7 +77,7 @@ function downloadModel(): Promise<void> {
       response.pipe(file);
       file.on("finish", () => {
         file.close();
-        console.log("[opencode-speak] Model downloaded");
+        onStatus?.("Model downloaded");
         resolve();
       });
     });
