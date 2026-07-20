@@ -1,141 +1,85 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { getVadContext } from "./stt";
 
 const SAMPLE_RATE = 16000;
 const BYTES_PER_SAMPLE = 2;
-const FRAME_MS = 80;
-const FRAME_SAMPLES = Math.floor(SAMPLE_RATE * (FRAME_MS / 1000));
-const FRAME_BYTES = FRAME_SAMPLES * BYTES_PER_SAMPLE;
-const SILENCE_TIMEOUT_MS = 1200;
-const RMS_THRESHOLD = 0.02;
+const VAD_FRAME = 512;
+const FRAME_BYTES = VAD_FRAME * BYTES_PER_SAMPLE;
+const SILENCE_MS = 600;
+const VAD_SPEECH = 0.3;
 
 let soxProcess: ChildProcess | null = null;
 let audioBuffer: Buffer[] = [];
-let isSpeaking = false;
 let silenceStart = 0;
-let speechStart = 0;
-let vadInterval: ReturnType<typeof setInterval> | null = null;
-let utteranceCallback: ((pcm: Int16Array) => void) | null = null;
+let onChunk: ((buf: Buffer) => void) | null = null;
 let onError: ((msg: string) => void) | null = null;
 
-export function setVadError(cb: (msg: string) => void): void {
-  onError = cb;
+function bufToF32(buf: Buffer): Float32Array {
+  const samples = buf.length / 2;
+  const f32 = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) f32[i] = buf.readInt16LE(i * 2) / 32768;
+  return f32;
 }
 
-export function startCapture(onUtterance: (pcm: Int16Array) => void): void {
-  utteranceCallback = onUtterance;
+export function setOnChunk(cb: (buf: Buffer) => void): void { onChunk = cb; }
+export function setMicError(cb: (msg: string) => void): void { onError = cb; }
+
+export function startCapture(): void {
   audioBuffer = [];
-  isSpeaking = false;
+  silenceStart = 0;
 
-  soxProcess = spawn("sox", [
-    "-t", "waveaudio", "default",
-    "-q",
-    "--buffer", "1024",
-    "-t", "raw",
-    "-r", String(SAMPLE_RATE),
-    "-e", "signed",
-    "-b", "16",
-    "-c", "1",
-    "-",
-  ]);
+  const args = ["-t", "waveaudio", "default", "-t", "raw", "-r", String(SAMPLE_RATE), "-e", "signed", "-b", "16", "-c", "1", "-"];
+  soxProcess = spawn("sox", args);
 
+  let buf: Buffer[] = [];
   soxProcess.stdout?.on("data", (chunk: Buffer) => {
-    audioBuffer.push(chunk);
+    try {
+      buf.push(chunk);
+      const total = buf.reduce((s, b) => s + b.length, 0);
+      if (total < FRAME_BYTES) return;
+
+      const frame = Buffer.concat(buf);
+      buf = [];
+      audioBuffer.push(frame);
+
+      const vad = getVadContext();
+      if (!vad) return;
+
+      const prob = vad.process(bufToF32(frame));
+
+      if (prob > VAD_SPEECH) {
+        silenceStart = 0;
+      } else if (silenceStart === 0) {
+        silenceStart = Date.now();
+      } else if (Date.now() - silenceStart >= SILENCE_MS) {
+        const collected = Buffer.concat(audioBuffer);
+        audioBuffer = [];
+        silenceStart = 0;
+        if (collected.length >= SAMPLE_RATE * BYTES_PER_SAMPLE) {
+          onChunk?.(collected);
+        }
+      }
+    } catch (e) {
+      onError?.(`vad error: ${e instanceof Error ? e.message : e}`);
+    }
   });
 
   soxProcess.stderr?.on("data", () => {});
-
-  soxProcess.on("error", (err: Error) => {
-    onError?.(`Sox error: ${err.message}`);
-  });
-
+  soxProcess.on("error", (err: Error) => onError?.(`Sox error: ${err.message}`));
   soxProcess.on("exit", (code: number | null) => {
-    if (code !== 0 && code !== null) {
-      onError?.(`Sox exited with code ${code}`);
-    }
+    if (code !== 0 && code !== null) onError?.(`Sox exited with code ${code}`);
   });
-
-  vadInterval = setInterval(processVad, FRAME_MS);
 }
 
 export function stopCapture(): void {
-  if (vadInterval !== null) {
-    clearInterval(vadInterval);
-    vadInterval = null;
-  }
-  if (soxProcess && !soxProcess.killed) {
-    soxProcess.kill();
-  }
+  if (soxProcess && !soxProcess.killed) soxProcess.kill();
   soxProcess = null;
   audioBuffer = [];
-  isSpeaking = false;
-  utteranceCallback = null;
-}
-
-function processVad(): void {
-  if (!utteranceCallback) return;
-
-  const totalBytes = audioBuffer.reduce((sum, buf) => sum + buf.length, 0);
-  if (totalBytes < FRAME_BYTES) return;
-
-  const now = Date.now();
-  const rms = computeRms(lastBytes(FRAME_BYTES));
-
-  if (rms > RMS_THRESHOLD) {
-    if (!isSpeaking) {
-      isSpeaking = true;
-      speechStart = now;
-      silenceStart = 0;
-    }
-  } else {
-    if (isSpeaking) {
-      if (silenceStart === 0) {
-        silenceStart = now;
-      } else if (now - silenceStart >= SILENCE_TIMEOUT_MS) {
-        finishUtterance();
-      }
-    }
-  }
-}
-
-function computeRms(buf: Buffer): number {
-  let sumSq = 0;
-  let count = 0;
-  for (let i = 0; i + 1 < buf.length; i += 2) {
-    const sample = buf.readInt16LE(i);
-    sumSq += sample * sample;
-    count++;
-  }
-  if (count === 0) return 0;
-  return Math.sqrt(sumSq / count) / 32768;
-}
-
-function lastBytes(n: number): Buffer {
-  const collected = Buffer.concat(audioBuffer);
-  if (collected.length <= n) return collected;
-  return collected.subarray(collected.length - n);
-}
-
-function finishUtterance(): void {
-  if (!utteranceCallback) return;
-
-  const speechEndMs = silenceStart + SILENCE_TIMEOUT_MS;
-  const collected = Buffer.concat(audioBuffer);
-  const totalDurationMs = (collected.length / (SAMPLE_RATE * BYTES_PER_SAMPLE)) * 1000;
-  const speechBytes = Math.floor(((speechEndMs - speechStart) / totalDurationMs) * collected.length);
-  const speechBuffer = collected.subarray(0, Math.min(speechBytes, collected.length));
-  audioBuffer = [];
-
-  isSpeaking = false;
   silenceStart = 0;
+}
 
-  if (speechBuffer.length < SAMPLE_RATE * BYTES_PER_SAMPLE) return;
-
-  const pcm = new Int16Array(speechBuffer.length / 2);
-  for (let i = 0; i < pcm.length; i++) {
-    pcm[i] = speechBuffer.readInt16LE(i * 2);
-  }
-
-  utteranceCallback(pcm);
+export function isCapturing(): boolean {
+  return soxProcess !== null && !soxProcess.killed;
 }
 
 export function isMicAvailable(): Promise<boolean> {

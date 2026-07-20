@@ -7,11 +7,8 @@
   "types": "dist/index.d.ts",
   "files": ["dist"],
   "scripts": {
-    "build": "tsc",
-    "dev": "bun build src/index.ts --outfile .opencode/plugins/opencode-speak.js --target bun --external whisper-cpp-node",
-    "dev:tui": "bun build src/tui.ts --outfile .opencode/plugins/opencode-speak-tui.js --target bun --external whisper-cpp-node",
-    "dev:all": "bun run dev && bun run dev:tui",
-    "prepublishOnly": "tsc"
+    "build": "bun run scripts/build.ts",
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "whisper-cpp-node": "^0.2.12"

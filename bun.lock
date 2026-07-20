@@ -8,9 +8,11 @@
         "whisper-cpp-node": "^0.2.12",
       },
       "devDependencies": {
-        "@opencode-ai/plugin": "latest",
         "@types/node": "^26.1.1",
         "typescript": "^5.7.0",
+      },
+      "peerDependencies": {
+        "@opencode-ai/plugin": "^1.0.0",
       },
     },
   },

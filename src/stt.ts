@@ -1,53 +1,80 @@
-import {
-  createWhisperContext,
-  transcribeAsync,
-  type WhisperContext,
-} from "whisper-cpp-node";
-import { existsSync, mkdirSync, createWriteStream } from "node:fs";
+import type { WhisperContext } from "whisper-cpp-node";
+import { createRequire } from "node:module";
+import { existsSync, statSync, rmSync, mkdirSync, createWriteStream } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { get } from "node:https";
 
 const MODEL_DIR = join(homedir(), ".config", "opencode", "voice-models");
-const MODEL_URL =
-  "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin";
-const MODEL_PATH = join(MODEL_DIR, "ggml-tiny.en.bin");
+const WHISPER_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
+const WHISPER_PATH = join(MODEL_DIR, "ggml-base.en.bin");
+const VAD_URL = "https://raw.githubusercontent.com/ggml-org/whisper.cpp/master/models/for-tests-silero-v6.2.0-ggml.bin";
+const VAD_PATH = join(MODEL_DIR, "ggml-silero-vad.bin");
 
 let ctx: WhisperContext | null = null;
 let onStatus: ((msg: string) => void) | null = null;
+let _whisper: any = null;
+function getWhisper(): any {
+  if (!_whisper) {
+    const _require = createRequire(import.meta.url);
+    _whisper = _require("whisper-cpp-node");
+  }
+  return _whisper;
+}
+
+let _vadCtx: any = null;
+
+export function getVadContext(): any {
+  if (_vadCtx) return _vadCtx;
+  if (!existsSync(VAD_PATH)) return null;
+  const w = getWhisper();
+  _vadCtx = new w.VadContextClass({ model: VAD_PATH, threshold: 0.5 });
+  return _vadCtx;
+}
 
 export function setWhisperStatus(cb: (msg: string) => void): void {
   onStatus = cb;
 }
 
-export async function initWhisper(): Promise<void> {
-  if (ctx) return;
-  if (!existsSync(MODEL_PATH)) {
-    onStatus?.("Downloading whisper model (75 MB)...");
-    await downloadModel();
-  }
-  ctx = createWhisperContext({ model: MODEL_PATH, use_gpu: false });
+export function initWhisper(): void {
+  if (ctx || _wReady) return;
+  _wReady = (async () => {
+    if (!existsSync(WHISPER_PATH) || statSync(WHISPER_PATH).size === 0) {
+      if (existsSync(WHISPER_PATH)) rmSync(WHISPER_PATH);
+      onStatus?.("Downloading whisper model (75 MB)...");
+      await download(WHISPER_URL, WHISPER_PATH);
+    }
+    const w = getWhisper();
+    ctx = w.createWhisperContext({ model: WHISPER_PATH, use_gpu: true });
+  })();
+}
+
+let _wReady: Promise<void> | null = null;
+
+export function waitForWhisper(): Promise<void> {
+  if (ctx) return Promise.resolve();
+  if (!_wReady) initWhisper();
+  return _wReady ?? Promise.resolve();
 }
 
 export function freeWhisper(): void {
-  if (ctx) {
-    ctx.free();
-    ctx = null;
-  }
+  if (ctx) { ctx.free(); ctx = null; }
 }
 
-export async function transcribe(pcm: Int16Array): Promise<string> {
+export async function transcribeBuffer(raw: Buffer): Promise<string> {
   if (!ctx) throw new Error("Whisper not initialized");
 
-  const float32 = new Float32Array(pcm.length);
-  for (let i = 0; i < pcm.length; i++) {
-    float32[i] = pcm[i] / 32768;
-  }
+  const samples = raw.length / 2;
+  const float32 = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) float32[i] = raw.readInt16LE(i * 2) / 32768;
 
-  const result = await transcribeAsync(ctx, {
+  const w = getWhisper();
+  const result = await w.transcribeAsync(ctx, {
     pcmf32: float32,
     language: "en",
     n_threads: 4,
+    vad: true,
+    vad_model: VAD_PATH,
   });
 
   return (
@@ -58,33 +85,26 @@ export async function transcribe(pcm: Int16Array): Promise<string> {
   );
 }
 
-function downloadModel(): Promise<void> {
+function download(url: string, dest: string, depth = 0): Promise<void> {
+  if (depth > 5) return Promise.reject(new Error("Too many redirects"));
   return new Promise((resolve, reject) => {
-    if (!existsSync(MODEL_DIR)) mkdirSync(MODEL_DIR, { recursive: true });
-
-    const file = createWriteStream(MODEL_PATH);
-    const request = get(MODEL_URL, (response) => {
+    const request = get(url, (response) => {
       if (response.statusCode === 301 || response.statusCode === 302) {
-        file.close();
-        get(response.headers.location!, (res) => res.pipe(file));
+        const loc = response.headers.location;
+        if (!loc) { reject(new Error("Redirect with no location")); return; }
+        download(loc, dest, depth + 1).then(resolve, reject);
         return;
       }
       if (response.statusCode !== 200) {
-        file.close();
         reject(new Error(`Download failed with status ${response.statusCode}`));
         return;
       }
+      if (!existsSync(MODEL_DIR)) mkdirSync(MODEL_DIR, { recursive: true });
+      const file = createWriteStream(dest);
       response.pipe(file);
-      file.on("finish", () => {
-        file.close();
-        onStatus?.("Model downloaded");
-        resolve();
-      });
+      file.on("finish", () => { file.close(); onStatus?.("Model downloaded"); resolve(); });
+      file.on("error", () => { file.close(); reject(new Error("File write failed")); });
     });
-
-    request.on("error", () => {
-      file.close();
-      reject(new Error("Model download failed"));
-    });
+    request.on("error", () => reject(new Error("Download failed")));
   });
 }

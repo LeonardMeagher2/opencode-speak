@@ -4,6 +4,23 @@
     "tasks": {
       "path": "../tasks",
       "description": "Reference for how to set up a repo to build a plugin"
+    },
+    "opencode-config": {
+      "path": "../../.config/opencode",
+      "description": "Global opencode config directory"
+    },
+    "opencode-log": {
+      "path": "../../.local/share/opencode/log",
+      "description": "Opencode server logs"
+    },
+    "opencode-tool-output": {
+      "path": "../../.local/share/opencode/tool-output",
+      "description": "Opencode tool output directory"
+    }
+  },
+  "permission": {
+    "external_directory": {
+      "C:\\Users\\Leona\\.local\\share\\opencode\\log\\*": "allow"
     }
   }
 }
