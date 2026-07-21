@@ -19,7 +19,7 @@ export function getSessionID(): string | null { return _chatSessionID; }
 export function getClient(): any { return _clientRef; }
 
 export function setSessionID(id: string): void { _chatSessionID = id; }
-export function setAgent(name: string): void { _currentAgent = name; }
+export function setAgent(name: string | null): void { _currentAgent = name; }
 export function setActive(v: boolean): void { _active = v; }
 export function setWaiting(v: boolean): void { _waiting = v; }
 

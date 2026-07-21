@@ -55,6 +55,11 @@ const VoiceModePlugin: Plugin = async ({ client, directory }, rawOptions) => {
       }
     },
 
+    "chat.headers": async (input: any) => {
+      if (input.agent) setAgent(input.agent);
+      if (input.sessionID) setSessionID(input.sessionID);
+    },
+
     tool: {
       voice_settings: tool({
         description: "Get or set voice speed. Call with no arguments to view current speed. Speed 1.0 is normal, higher is faster.",
@@ -124,6 +129,8 @@ function transcribeChunk(raw: Buffer): void {
 function startVoice(): void {
   if (isActive()) return;
   setActive(true);
+  setWaiting(false);
+  setAgent(null);
   log("voice: on");
   setOnChunk(transcribeChunk);
   startCapture();
