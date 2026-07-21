@@ -1,6 +1,6 @@
 import { Plugin, tool } from "@opencode-ai/plugin";
 import { init, isInitialized, isActive, isWaiting, setSessionID, setAgent, setActive, setWaiting, sendText, reset, log, getSessionID } from "./state";
-import { createTinyTts } from "./tts/tiny-tts";
+import { createEdgeTts } from "./tts/edge-tts";
 import { createWhisper } from "./stt/whisper";
 import { startCapture, stopCapture, setOnChunk, setMicError, initVad } from "./vad";
 import type { TtsAdapter, SttAdapter } from "./types";
@@ -82,7 +82,8 @@ async function initBg(): Promise<void> {
   try {
     setMicError((msg) => log(msg));
     stt = createWhisper();
-    tts = createTinyTts();
+    tts = createEdgeTts();
+    tts.setup();
     await stt.init();
     initVad(stt.getVadContext());
   } catch (err) {

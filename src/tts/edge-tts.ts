@@ -1,4 +1,4 @@
-import { createRequire } from "node:module";
+import { EdgeTTS } from "node-edge-tts";
 import { unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -6,20 +6,25 @@ import { log } from "../state";
 import { play } from "../player";
 import type { TtsAdapter } from "../types";
 
-const _req = createRequire(import.meta.url);
-
-export function createTinyTts(): TtsAdapter {
-  let _tts: any = null;
+export function createEdgeTts(): TtsAdapter {
+  let _tts: EdgeTTS | null = null;
   let _handle: { stop(): void } | null = null;
-  let _speed = 1.0;
   let _tmpFile: string | null = null;
+  let _speed = 1.0;
 
   function getTts() {
     if (!_tts) {
-      const TinyTTS = _req("tiny-tts");
-      _tts = new TinyTTS();
+      _tts = new EdgeTTS({
+        voice: "en-US-AriaNeural",
+        rate: speedToRate(_speed),
+      });
     }
     return _tts;
+  }
+
+  function speedToRate(s: number): string {
+    const pct = Math.round((s - 1) * 100);
+    return pct >= 0 ? `+${pct}%` : `${pct}%`;
   }
 
   function doStop() {
@@ -39,8 +44,8 @@ export function createTinyTts(): TtsAdapter {
       doStop();
       try {
         const tts = getTts();
-        const file = join(tmpdir(), `speak-${Date.now()}.wav`);
-        await tts.speak(text, { output: file, speed: _speed });
+        const file = join(tmpdir(), `speak-${Date.now()}.mp3`);
+        await tts.ttsPromise(text, file);
         _tmpFile = file;
         _handle = play(file);
       } catch (err) {
@@ -50,14 +55,14 @@ export function createTinyTts(): TtsAdapter {
 
     stop: doStop,
 
-    setSpeed(speed: number) { _speed = speed; },
+    setSpeed(speed: number) {
+      _speed = speed;
+      _tts = null;
+    },
 
     getSettings() { return { speed: _speed }; },
 
-    async setup() {
-      getTts();
-      await _tts?.init();
-    },
+    async setup() {},
 
     dispose() {
       doStop();

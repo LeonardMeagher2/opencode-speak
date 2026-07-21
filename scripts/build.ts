@@ -10,7 +10,7 @@ const commands = join(root, ".opencode", "commands");
 rmSync(dist, { recursive: true, force: true });
 rmSync(join(plugins, "opencode-speak.js"), { force: true });
 
-execSync("bun build src/index.ts --outdir dist --target bun --format esm --external onnxruntime-node --external tiny-tts --external node-wav-player --external @opencode-ai/plugin", {
+execSync("bun build src/index.ts --outdir dist --target bun --format esm --external onnxruntime-node --external tiny-tts --external node-edge-tts --external @opencode-ai/plugin", {
   cwd: root,
   stdio: "inherit",
 });

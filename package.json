@@ -11,7 +11,7 @@
     "prepublishOnly": "bun run build"
   },
   "dependencies": {
-    "node-wav-player": "^1.0.0",
+    "node-edge-tts": "^1.2.10",
     "tiny-tts": "^5.0.1",
     "whisper-cpp-node": "^0.2.12"
   },

@@ -3,6 +3,7 @@ export interface TtsAdapter {
   stop(): void;
   setSpeed(speed: number): void;
   getSettings(): Record<string, unknown>;
+  setup(): Promise<void>;
   dispose(): void;
 }
 
