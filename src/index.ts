@@ -36,8 +36,7 @@ const VoiceModePlugin: Plugin = async ({ client, directory }, rawOptions) => {
       if (event.type === "message.updated") {
         const info = p.info;
         if (info?.sessionID) setSessionID(info.sessionID);
-        if (info?.agent) setAgent(info.agent);
-        else if (info?.mode) setAgent(info.mode);
+        if (info?.mode) setAgent(info.mode);
         if (info?.role === "assistant" && info?.id) _assistantMsgs.add(info.id);
       } else if (event.type === "session.idle") {
         setWaiting(false);
@@ -129,8 +128,6 @@ function transcribeChunk(raw: Buffer): void {
 function startVoice(): void {
   if (isActive()) return;
   setActive(true);
-  setWaiting(false);
-  setAgent(null);
   log("voice: on");
   setOnChunk(transcribeChunk);
   startCapture();

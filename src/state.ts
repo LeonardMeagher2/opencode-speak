@@ -16,7 +16,6 @@ export function isInitialized(): boolean { return _initialized; }
 export function isActive(): boolean { return _active; }
 export function isWaiting(): boolean { return _waiting; }
 export function getSessionID(): string | null { return _chatSessionID; }
-export function getClient(): any { return _clientRef; }
 
 export function setSessionID(id: string): void { _chatSessionID = id; }
 export function setAgent(name: string | null): void { _currentAgent = name; }
