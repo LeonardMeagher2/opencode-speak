@@ -1,20 +1,27 @@
 import { Plugin, tool } from "@opencode-ai/plugin";
 import { init, isInitialized, isActive, isWaiting, setSessionID, setAgent, setActive, setWaiting, sendText, reset, log, getSessionID } from "./state";
 import { createEdgeTts } from "./tts/edge-tts";
+import { createTinyTts } from "./tts/tiny-tts";
 import { createWhisper } from "./stt/whisper";
 import { startCapture, stopCapture, setOnChunk, setMicError, initVad } from "./vad";
 import type { TtsAdapter, SttAdapter } from "./types";
+
+interface SpeakOptions {
+  tts?: "edge" | "tiny";
+  speed?: number;
+}
 
 const _spokenTexts = new Map<string, string>();
 const _assistantMsgs = new Set<string>();
 let tts: TtsAdapter;
 let stt: SttAdapter;
 
-const VoiceModePlugin: Plugin = async ({ client, directory }) => {
+const VoiceModePlugin: Plugin = async ({ client, directory }, rawOptions) => {
   if (isInitialized()) return {};
   init(client);
 
-  initBg();
+  const options: SpeakOptions = (rawOptions || {}) as SpeakOptions;
+  initBg(options);
 
   return {
     dispose: async () => {
@@ -78,11 +85,12 @@ const VoiceModePlugin: Plugin = async ({ client, directory }) => {
   };
 };
 
-async function initBg(): Promise<void> {
+async function initBg(options: SpeakOptions): Promise<void> {
   try {
     setMicError((msg) => log(msg));
     stt = createWhisper();
-    tts = createEdgeTts();
+    tts = options.tts === "tiny" ? createTinyTts() : createEdgeTts();
+    if (options.speed !== undefined) tts.setSpeed(options.speed);
     tts.setup();
     await stt.init();
     initVad(stt.getVadContext());
